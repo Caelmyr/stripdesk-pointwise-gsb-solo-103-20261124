@@ -1,0 +1,1 @@
+"""StripDesk negative strip digitization."""
