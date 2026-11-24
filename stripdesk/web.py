@@ -62,8 +62,29 @@ def create_app(root):
     def guides(key):
         strip = desk.strip(key)
         config = strip['config']
-        return jsonify(revision=strip['revision'], frames=layout.regular_frames(config),
+        return jsonify(revision=strip['revision'], frames=layout.guide_frames(config),
+                       custom_edges=bool(config.get('edges')),
                        profile=layout.inspect_columns(desk.pixels(key), config))
+
+    @api.get('/strips/<key>/suggest')
+    def suggestion(key):
+        args = request.args
+        frame_min = args.get('frame_min')
+        frame_max = args.get('frame_max')
+        if frame_min is not None and not frame_min.lstrip('-').isdigit():
+            raise Invalid('最小原片宽度必须为整数。')
+        if frame_max is not None and not frame_max.lstrip('-').isdigit():
+            raise Invalid('最大原片宽度必须为整数。')
+        return jsonify(desk.proposal(key, args.get('frame_min', type=int),
+                                     args.get('frame_max', type=int)))
+
+    @api.post('/strips/<key>/edges')
+    def adopt_edges(key):
+        return jsonify(desk.adopt_edges(key, body())), 201
+
+    @api.delete('/strips/<key>/edges')
+    def reset_edges(key):
+        return jsonify(desk.reset_edges(key, body().get('revision')))
 
     @api.get('/strips/<key>/frames/<int:number>.png')
     def positive(key, number):
@@ -87,7 +108,7 @@ def create_app(root):
     def contact(key):
         strip = desk.strip(key)
         config = strip['config']
-        return png(frames.contact(desk.pixels(key), config, layout.regular_frames(config)))
+        return png(frames.contact(desk.pixels(key), config, layout.guide_frames(config)))
 
     @api.route('/strips/<key>/runs', methods=['GET', 'POST'])
     def runs(key):

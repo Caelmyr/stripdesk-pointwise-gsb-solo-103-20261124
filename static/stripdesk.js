@@ -2,8 +2,10 @@
 
 const $ = selector => document.querySelector(selector);
 const form = $("#settings");
-const state = {strip: null, listing: [], frame: null, profile: null, sample: null, sheet: false, preview: 0};
-const numeric = ["origin", "pitch", "count", "first", "top", "bottom", "dark_level", "dark_share"];
+const state = {strip: null, listing: [], frame: null, profile: null, sample: null,
+               sheet: false, preview: 0, suggestion: null};
+const numeric = ["origin", "pitch", "count", "first", "top", "bottom", "dark_level",
+                 "dark_share", "frame_min", "frame_max"];
 const colors = ["red", "green", "blue"];
 
 async function api(path, params = {}) {
@@ -118,6 +120,42 @@ function drawGuides() {
     return box;
   });
   $("#guides").replaceChildren(...guides);
+  drawSuggestion();
+}
+
+function drawSuggestion() {
+  const overlay = $("#suggest-overlay");
+  if (!state.suggestion || !state.suggestion.feasible) {
+    overlay.replaceChildren();
+    return;
+  }
+  const [width, height] = state.strip.size;
+  const {top, bottom} = state.strip.config;
+  const boxes = state.suggestion.frames.map(frame => {
+    const box = node("div", undefined, "suggest-box");
+    box.style.cssText = `left:${frame.left / width * 100}%;width:${(frame.right - frame.left) / width * 100}%;top:${top / height * 100}%;height:${(bottom - top) / height * 100}%`;
+    return box;
+  });
+  overlay.replaceChildren(...boxes);
+}
+
+function renderSuggestion(result) {
+  state.suggestion = result;
+  const status = $("#suggest-status");
+  const detail = $("#suggest-detail");
+  $("#suggest-adopt").disabled = !result.feasible;
+  if (!result.feasible) {
+    status.textContent = "暂无合用分帧";
+    status.dataset.mode = "none";
+    detail.textContent = result.reasons.join(" ") || "当前暗带与宽度限制凑不出一套完整分帧，仍按手头导线出片。";
+    drawSuggestion();
+    return;
+  }
+  const widths = result.frames.map(frame => frame.width).join(" / ");
+  status.textContent = `最小暗带余量 ${result.min_margin ?? "—"} 列 · 内线总挪动 ${result.total_movement} px`;
+  status.dataset.mode = "ready";
+  detail.textContent = `各格原片宽度 (px)：${widths}；范围 ${result.limits[0]}–${result.limits[1]}。确认后点“采用这套线”，未采用前不影响出片。`;
+  drawSuggestion();
 }
 
 async function preview() {
@@ -168,6 +206,7 @@ function displayRuns(rows, strip) {
 async function display(strip, reset = true) {
   state.strip = strip;
   state.sample = null;
+  state.suggestion = null;
   $("#use-base").disabled = true;
   $("#probe").textContent = "在扫描图上点选像素，核对原色和转正颜色。";
   const [width, height] = strip.size;
@@ -188,10 +227,28 @@ async function display(strip, reset = true) {
   if (reset) state.sheet = false;
   drawProfile(profile.profile);
   displayRuns(rows, strip);
+  syncSuggestPanel(profile.custom_edges);
   $("#desk").hidden = false;
   $("#blank").hidden = true;
   library();
   await preview();
+}
+
+function syncSuggestPanel(customEdges) {
+  $("#suggest-clear").disabled = !customEdges;
+  const status = $("#suggest-status");
+  if (customEdges) {
+    status.textContent = "已采用分帧建议";
+    status.dataset.mode = "adopted";
+    $("#suggest-detail").textContent = "当前导线来自已确认的分帧建议；改比例与上下边仍沿用这套线，恢复手调等距线后才会重新等距。";
+  } else {
+    status.textContent = "";
+    status.dataset.mode = "";
+    $("#suggest-detail").textContent = "按实测暗带在当前手调导线旁另算一套分帧，采用前不会改动导线或出片。";
+  }
+  $("#suggest-adopt").disabled = true;
+  state.suggestion = null;
+  drawSuggestion();
 }
 
 let openSerial = 0;
@@ -256,6 +313,49 @@ $("#save-run").addEventListener("click", run(async () => {
   const rows = await api(stripUrl("/runs", current));
   if (state.strip === current) displayRuns(rows, current);
   announce("出片已保存，可下载本版成片。");
+}));
+
+$("#suggest-run").addEventListener("click", run(async () => {
+  const current = state.strip;
+  const frameMin = form.elements.frame_min.valueAsNumber;
+  const frameMax = form.elements.frame_max.valueAsNumber;
+  if (!Number.isFinite(frameMin) || !Number.isFinite(frameMax)) {
+    announce("请先填写最小和最大原片宽度。", true);
+    return;
+  }
+  if (frameMin > frameMax) {
+    announce("最小原片宽度不能大于最大原片宽度。", true);
+    return;
+  }
+  const params = new URLSearchParams({
+    frame_min: String(frameMin), frame_max: String(frameMax),
+  });
+  const result = await api(stripUrl("/suggest?" + params));
+  if (state.strip !== current) return;
+  renderSuggestion(result);
+  announce(result.feasible ? "已生成一套分帧建议，确认后再采用。" : "没有合用的分帧，仍按手头导线出片。");
+}));
+
+$("#suggest-adopt").addEventListener("click", run(async () => {
+  const current = state.strip;
+  const proposal = state.suggestion;
+  if (!proposal || !proposal.feasible) return;
+  const saved = await api(stripUrl("/edges"),
+                          json("POST", {revision: current.revision, edges: proposal.edges}));
+  if (state.strip !== current) return;
+  state.listing = state.listing.map(entry => entry.id === saved.id ? saved : entry);
+  await display(saved, false);
+  announce("已采用分帧建议，片号不变；后续出片按这套边线居中裁切。");
+}));
+
+$("#suggest-clear").addEventListener("click", run(async () => {
+  const current = state.strip;
+  const saved = await api(stripUrl("/edges"),
+                          json("DELETE", {revision: current.revision}));
+  if (state.strip !== current) return;
+  state.listing = state.listing.map(entry => entry.id === saved.id ? saved : entry);
+  await display(saved, false);
+  announce("已恢复手调等距导线。");
 }));
 
 $("#transfer").addEventListener("click", run(async () => {

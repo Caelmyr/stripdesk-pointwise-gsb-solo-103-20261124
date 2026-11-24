@@ -16,10 +16,12 @@ def initial(size):
         'top': 0, 'bottom': height, 'ratio': 'native',
         'base': [222, 174, 131], 'negative': True,
         'dark_level': 36, 'dark_share': 0.8,
+        'frame_min': max(8, round(width * 0.9)), 'frame_max': max(8, width),
+        'edges': None,
     }
 
 
-def configuration(value, size):
+def configuration(value, size, previous=None):
     width, height = size
     origin = integer(value.get('origin'), '起点', 0, width - 8)
     pitch = integer(value.get('pitch'), '帧距', 8, width)
@@ -38,6 +40,22 @@ def configuration(value, size):
     negative = value.get('negative')
     if type(negative) is not bool:
         raise Invalid('请选择负片转正或维持原色。')
+    span = pitch * count
+    fallback_min = previous.get('frame_min') if previous else None
+    if fallback_min is None:
+        fallback_min = max(8, round(pitch * 0.9))
+    fallback_max = previous.get('frame_max') if previous else None
+    if fallback_max is None:
+        fallback_max = max(fallback_min, round(pitch * 1.1))
+    frame_min = integer(value.get('frame_min', fallback_min), '最小原片宽度', 1, span)
+    frame_max = integer(value.get('frame_max', max(frame_min, fallback_max)),
+                        '最大原片宽度', frame_min, span)
+    # Adopted suggestions only move internal edges; geometry changes invalidate them.
+    edges = previous.get('edges') if previous else None
+    if edges is not None and (previous.get('origin') != origin or
+                              previous.get('pitch') != pitch or
+                              previous.get('count') != count):
+        edges = None
     return {
         'origin': origin, 'pitch': pitch, 'count': count, 'first': first,
         'top': top, 'bottom': bottom, 'ratio': ratio,
@@ -45,6 +63,7 @@ def configuration(value, size):
         'negative': negative,
         'dark_level': integer(value.get('dark_level'), '暗值上限', 1, 254),
         'dark_share': number(value.get('dark_share'), '暗像素比例', 0.1, 1),
+        'frame_min': frame_min, 'frame_max': frame_max, 'edges': edges,
     }
 
 
@@ -53,6 +72,17 @@ def regular_frames(config):
         'number': config['first'] + index,
         'left': config['origin'] + index * config['pitch'],
         'right': config['origin'] + (index + 1) * config['pitch'],
+    } for index in range(config['count'])]
+
+
+def guide_frames(config):
+    """Numbered native apertures: adopted suggestion edges, else hand guides."""
+    edges = config.get('edges')
+    if not edges:
+        return regular_frames(config)
+    return [{
+        'number': config['first'] + index,
+        'left': edges[index], 'right': edges[index + 1],
     } for index in range(config['count'])]
 
 

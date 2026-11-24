@@ -9,10 +9,13 @@ from . import layout, raster
 
 
 def fixed_gate(config, number):
-    """The aperture station rebuilds its rectangle from the plate number and regular guide settings."""
-    index = integer(number, '片号', config['first'], config['first'] + config['count'] - 1) - config['first']
-    left = config['origin'] + index * config['pitch']
-    return [left, config['top'], left + config['pitch'], config['bottom']]
+    """Rebuild the native rectangle from the plate number and active guide edges."""
+    rows = layout.guide_frames(config)
+    for row in rows:
+        if row['number'] == integer(number, '片号', config['first'],
+                                    config['first'] + config['count'] - 1):
+            return [row['left'], config['top'], row['right'], config['bottom']]
+    raise Invalid('找不到该片号的导线。')
 
 
 def aperture(config, number):

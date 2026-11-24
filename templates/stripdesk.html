@@ -18,8 +18,19 @@
 <div id="blank"><h2>打开一条底片</h2><p>选择左侧片条，或先导入水平扫描。</p></div>
 <section id="desk" hidden>
 <header class="deskhead"><div><h2 id="strip-name"></h2><span id="strip-meta"></span></div><button id="save-run" class="primary" type="button">保存出片</button></header>
-<div class="strip-window"><div id="scan"><img id="source" alt="片条原始扫描"><div id="guides" aria-hidden="true"></div></div></div>
+<div class="strip-window"><div id="scan"><img id="source" alt="片条原始扫描"><div id="guides" aria-hidden="true"></div><div id="suggest-overlay" aria-hidden="true"></div></div></div>
 <div class="profile-row"><canvas id="profile" width="900" height="105" aria-label="选定高度内每列的暗像素比例"></canvas><div><strong>纵向暗带</strong><p id="bands"></p></div></div>
+<section class="suggest-row">
+<header><h3>分帧建议</h3><span id="suggest-status" class="suggest-status"></span></header>
+<div class="suggest-controls">
+<label>最小原片宽度 <input type="number" name="frame_min" form="settings" min="1"></label>
+<label>最大原片宽度 <input type="number" name="frame_max" form="settings" min="1"></label>
+<button id="suggest-run" type="button">生成分帧建议</button>
+<button id="suggest-adopt" type="button" class="primary" disabled>采用这套线</button>
+<button id="suggest-clear" type="button" disabled>恢复手调等距线</button>
+</div>
+<p id="suggest-detail">按实测暗带在当前手调导线旁另算一套分帧，采用前不会改动任何导线或出片。</p>
+</section>
 <div class="edit-area">
 <form id="settings" class="settings">
 <h3>导线与成片</h3>

@@ -11,7 +11,7 @@ from werkzeug.exceptions import NotFound
 
 from image_lab.validation import Conflict, identifier, integer, text, timestamp
 
-from . import demo, frames, layout, raster
+from . import demo, frames, layout, raster, suggest
 
 
 def read_json(path):
@@ -85,16 +85,51 @@ class FilmWorkspace:
     def configure(self, key, value):
         with self.lock:
             record = self.current(key, value.get('revision'))
-            record['config'] = layout.configuration(value, record['size'])
+            record['config'] = layout.configuration(value, record['size'], record['config'])
             record['revision'] += 1
             write_json(self.directory(key) / 'strip.json', record)
+            return record
+
+    def proposal(self, key, frame_min=None, frame_max=None):
+        with self.lock:
+            record = self.strip(key)
+            config = dict(record['config'])
+            span = config['pitch'] * config['count']
+            if frame_min is not None:
+                config['frame_min'] = integer(frame_min, '最小原片宽度', 1, span)
+            if frame_max is not None:
+                config['frame_max'] = integer(frame_max, '最大原片宽度',
+                                              config['frame_min'], span)
+            image = self.pixels(key)
+            profile = layout.inspect_columns(image, config)
+            return suggest.suggest(image, config, profile)
+
+    def adopt_edges(self, key, value):
+        with self.lock:
+            record = self.current(key, value.get('revision'))
+            config = record['config']
+            image = self.pixels(key)
+            profile = layout.inspect_columns(image, config)
+            edges = suggest.validate_edges(value.get('edges'), config, profile['bands'])
+            record['config'] = dict(config, edges=edges)
+            record['revision'] += 1
+            write_json(self.directory(key) / 'strip.json', record)
+            return record
+
+    def reset_edges(self, key, revision):
+        with self.lock:
+            record = self.current(key, revision)
+            if record['config'].get('edges') is not None:
+                record['config'] = dict(record['config'], edges=None)
+                record['revision'] += 1
+                write_json(self.directory(key) / 'strip.json', record)
             return record
 
     def save(self, key, revision):
         with self.lock:
             record = self.current(key, revision)
             config = record['config']
-            rows = layout.regular_frames(config)
+            rows = layout.guide_frames(config)
             image = self.pixels(key)
             reviews = []
             for row in rows:

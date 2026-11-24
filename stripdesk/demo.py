@@ -8,6 +8,7 @@ SETTINGS = {
     'origin': 32, 'pitch': 233, 'count': 4, 'first': 17,
     'top': 67, 'bottom': 237, 'ratio': '3:2', 'base': [228, 175, 130],
     'negative': True, 'dark_level': 38, 'dark_share': 0.8,
+    'frame_min': 210, 'frame_max': 256, 'edges': None,
 }
 
 
